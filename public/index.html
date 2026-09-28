@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eliminador de fondos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #8b909c;
+    --accent: #6c8cff;
+    --accent-hover: #8aa4ff;
+    --ok: #3ecf8e;
+    --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    padding: 36px 20px;
+    text-align: center;
+    background: var(--panel);
+  }
+  #dropzone p { margin: 4px 0; color: var(--muted); font-size: 13px; }
+  #dropzone strong { color: var(--text); }
+  .pick-buttons { display: flex; gap: 10px; justify-content: center; margin: 14px 0 4px; flex-wrap: wrap; }
+
+  input[type="file"] { display: none; }
+
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { background: #3a3e4a; cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  button.secondary:hover { background: #1c2030; }
+
+  #summary {
+    display: none;
+    margin-top: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  #summary .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  #summary .row strong { color: var(--text); }
+  .bigbar {
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bigbar > div {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width .2s;
+  }
+
+  #controls { display: none; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+
+  #list { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+  }
+  .thumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .thumb-slot {
+    width: 64px; height: 64px;
+    border-radius: 6px;
+    overflow: hidden;
+    background:
+      linear-gradient(45deg, #333 25%, transparent 25%) -0px -0px/12px 12px,
+      linear-gradient(-45deg, #333 25%, transparent 25%) -0px 6px/12px 12px,
+      linear-gradient(45deg, transparent 75%, #333 75%) 6px -6px/12px 12px,
+      linear-gradient(-45deg, transparent 75%, #333 75%) -6px 0px/12px 12px;
+    background-color: #444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .thumb-slot img { width: 100%; height: 100%; object-fit: cover; }
+  .arrow { color: var(--muted); font-size: 14px; }
+
+  .info { flex: 1; min-width: 180px; }
+  .info .name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info .status { font-size: 12px; color: var(--muted); margin-top: 2px; display: flex; gap: 8px; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+
+  .bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+    width: 100%;
+  }
+  .bar > div {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width .15s;
+  }
+  .bar.err > div { background: var(--err); }
+
+  .item a.dl {
+    font-size: 13px;
+    color: var(--accent);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .item a.dl:hover { text-decoration: underline; }
+
+  #note {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 24px;
+    line-height: 1.5;
+  }
+  .corner-images {
+    position: fixed;
+    bottom: 40px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    pointer-events: none;
+    z-index: 1000;
+  }
+  .corner-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+  }
+  .corner {
+    width: 80px;
+    height: 80px;
+    opacity: 0.9;
+    border-radius: 8px;
+    object-fit: contain;
+  }
+  .corner-text {
+    font-size: 13px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  @media (max-width: 600px) {
+    .corner { width: 50px; height: 50px; }
+    .corner-text { font-size: 11px; padding: 4px 8px; }
+    .corner-images { padding: 0 10px; bottom: 30px; }
+  }
+
+  /* ── Isla Update 2.0 (dynamic-island) ── */
+  #update-island {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #island-pill {
+    background: rgba(0,0,0,.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #island-pill .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+  }
+  #island-card {
+    margin-top: 10px;
+    width: min(420px, calc(100vw - 32px));
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.55);
+  }
+  #island-card h2 { margin: 0 0 4px; font-size: 16px; }
+  #island-card .update-time {
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  #island-card ul {
+    margin: 0 0 12px;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  #island-card code {
+    background: #0c0e13;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div id="update-island">
+  <button id="island-pill" aria-expanded="false">
+    <span class="dot"></span> Update 2.0 — ver cambios
+  </button>
+  <div id="island-card" hidden>
+    <h2>Update 2.0</h2>
+    <p class="update-time">📅 28/09/2026 — 00:44 CLT / 03:44 UTC</p>
+    <ul>
+      <li>Pipeline Node.js puro: ONNX Runtime → <strong>U²-Net (320px)</strong> → máscara alpha → Sharp → PNG transparente</li>
+      <li>Modelo liviano (~176 MB) que <strong>se descarga solo</strong> en el servidor: nada pesado en el deploy</li>
+      <li>Foto ORIGINAL intacta + máscara a tamaño original (sin reescalar la salida)</li>
+      <li>Sesión ONNX cacheada y bajo consumo (1 hilo, sin arena), <code>maxDuration: 60</code></li>
+      <li>Todo lo subible junto en la carpeta <code>app/</code></li>
+    </ul>
+    <button id="island-close" class="secondary">Cerrar</button>
+  </div>
+</div>
+<div class="wrap">
+  <h1>Eliminador de fondos</h1>
+  <p class="sub">Sube una carpeta entera o varias imágenes</p>
+
+  <div class="corner-images">
+    <div class="corner-item corner-left">
+      <img src="./imagen/logo_1.png" alt="" class="corner">
+      <span class="corner-text">Raices sabor y estilo</span>
+    </div>
+    <div class="corner-item corner-right">
+      <span class="corner-text">Rs Santi</span>
+      <img src="./imagen/logo_2.png" alt="" class="corner">
+    </div>
+  </div>
+
+  <div id="dropzone">
+    <p><strong>Elige cómo subir tus imágenes</strong></p>
+    <p>.jpg, .jpeg, .png, .webp</p>
+    <div class="pick-buttons">
+      <button id="pickFolderBtn">Subir carpeta</button>
+      <button id="pickFilesBtn" class="secondary">Subir imágenes sueltas</button>
+    </div>
+    <input type="file" id="folderInput" webkitdirectory directory multiple>
+    <input type="file" id="filesInput" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple>
+  </div>
+
+  <div id="summary">
+    <div class="row"><span>Tiempo total</span><strong id="elapsed">00:00</strong></div>
+    <div class="row"><span id="countText">0 de 0 completadas</span><strong id="percentText">0%</strong></div>
+    <div class="bigbar"><div id="overallBar"></div></div>
+  </div>
+
+  <div id="controls">
+    <button id="processBtn">Quitar fondos</button>
+    <button id="downloadAllBtn" class="secondary" disabled>Descargar todo</button>
+    <button id="clearBtn" class="secondary">Limpiar</button>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+  const API_URL = "/api/remove-bg";
+
+  const folderInput = document.getElementById("folderInput");
+  const filesInput = document.getElementById("filesInput");
+  const pickFolderBtn = document.getElementById("pickFolderBtn");
+  const pickFilesBtn = document.getElementById("pickFilesBtn");
+  const list = document.getElementById("list");
+  const controls = document.getElementById("controls");
+  const processBtn = document.getElementById("processBtn");
+  const downloadAllBtn = document.getElementById("downloadAllBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const summary = document.getElementById("summary");
+  const elapsedEl = document.getElementById("elapsed");
+  const countText = document.getElementById("countText");
+  const percentText = document.getElementById("percentText");
+  const overallBar = document.getElementById("overallBar");
+
+  const SUPPORTED = new Set(["image/jpeg", "image/png", "image/webp"]);
+  let entries = [];
+  let timerHandle = null;
+  let startedAt = 0;
+
+  pickFolderBtn.addEventListener("click", () => folderInput.click());
+  pickFilesBtn.addEventListener("click", () => filesInput.click());
+  folderInput.addEventListener("change", (e) => addFiles(e.target.files));
+  filesInput.addEventListener("change", (e) => addFiles(e.target.files));
+
+  function addFiles(fileList) {
+    const files = Array.from(fileList).filter((f) => SUPPORTED.has(f.type));
+    if (files.length === 0) return;
+
+    for (const file of files) {
+      const row = document.createElement("div");
+      row.className = "item";
+      row.innerHTML = `
+        <div class="thumbs">
+          <div class="thumb-slot before"><img src="${URL.createObjectURL(file)}"></div>
+          <div class="arrow">→</div>
+          <div class="thumb-slot after">?</div>
+        </div>
+        <div class="info">
+          <div class="name">${file.webkitRelativePath || file.name}</div>
+          <div class="status"><span class="statusText">En espera</span><span class="pctText">0%</span></div>
+          <div class="bar"><div></div></div>
+        </div>
+        <a class="dl" style="display:none;" download>Descargar .png</a>
+      `;
+      list.appendChild(row);
+
+      entries.push({
+        file,
+        percent: 0,
+        resultBlob: null,
+        rowEl: row,
+        afterSlot: row.querySelector(".thumb-slot.after"),
+        statusEl: row.querySelector(".statusText"),
+        pctEl: row.querySelector(".pctText"),
+        barEl: row.querySelector(".bar > div"),
+        barWrapEl: row.querySelector(".bar"),
+        dlEl: row.querySelector(".dl"),
+      });
+    }
+
+    controls.style.display = "flex";
+    summary.style.display = "block";
+    countText.textContent = `0 de ${entries.length} completadas`;
+  }
+
+  clearBtn.addEventListener("click", () => {
+    entries = [];
+    list.innerHTML = "";
+    controls.style.display = "none";
+    summary.style.display = "none";
+    downloadAllBtn.disabled = true;
+    folderInput.value = "";
+    filesInput.value = "";
+    stopTimer();
+  });
+
+  function startTimer() {
+    startedAt = Date.now();
+    timerHandle = setInterval(updateElapsed, 250);
+  }
+  function stopTimer() {
+    if (timerHandle) clearInterval(timerHandle);
+    timerHandle = null;
+  }
+  function updateElapsed() {
+    const secs = Math.floor((Date.now() - startedAt) / 1000);
+    const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+    const ss = String(secs % 60).padStart(2, "0");
+    elapsedEl.textContent = `${mm}:${ss}`;
+  }
+
+  function updateOverall() {
+    const total = entries.reduce((sum, e) => sum + e.percent, 0);
+    const avg = entries.length ? total / entries.length : 0;
+    overallBar.style.width = `${avg}%`;
+    percentText.textContent = `${Math.round(avg)}%`;
+    const done = entries.filter((e) => e.percent >= 100).length;
+    countText.textContent = `${done} de ${entries.length} completadas`;
+  }
+
+  function setPercent(entry, pct) {
+    entry.percent = Math.max(entry.percent, Math.min(100, pct));
+    entry.barEl.style.width = `${entry.percent}%`;
+    entry.pctEl.textContent = `${Math.round(entry.percent)}%`;
+    updateOverall();
+  }
+
+  function processOne(entry) {
+    return new Promise((resolve) => {
+      entry.statusEl.textContent = "Subiendo…";
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", API_URL);
+      xhr.responseType = "blob";
+
+      let fakeTimer = null;
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setPercent(entry, (e.loaded / e.total) * 40);
+        }
+      };
+
+      xhr.upload.onload = () => {
+        entry.statusEl.textContent = "Procesando…";
+        // No hay forma de medir el progreso real del modelo desde el navegador,
+        // así que animamos un avance suave mientras esperamos la respuesta.
+        fakeTimer = setInterval(() => {
+          if (entry.percent < 88) setPercent(entry, entry.percent + 2);
+        }, 300);
+      };
+
+      xhr.onprogress = (e) => {
+        if (fakeTimer) { clearInterval(fakeTimer); fakeTimer = null; }
+        entry.statusEl.textContent = "Descargando resultado…";
+        if (e.lengthComputable && e.total > 0) {
+          setPercent(entry, 90 + (e.loaded / e.total) * 10);
+        } else {
+          setPercent(entry, 95);
+        }
+      };
+
+      xhr.onload = () => {
+        if (fakeTimer) clearInterval(fakeTimer);
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const blob = xhr.response;
+          const url = URL.createObjectURL(blob);
+          const ms = xhr.getResponseHeader("X-Process-Time-Ms");
+
+          entry.resultBlob = blob;
+          entry.afterSlot.innerHTML = `<img src="${url}">`;
+          entry.statusEl.textContent = ms ? `Listo (${(ms / 1000).toFixed(1)}s)` : "Listo";
+          entry.statusEl.className = "statusText";
+          entry.rowEl.querySelector(".status").classList.add("ok");
+
+          const base = (entry.file.webkitRelativePath || entry.file.name).replace(/\.[^.]+$/, "");
+          entry.dlEl.href = url;
+          entry.dlEl.download = `${base}.png`;
+          entry.dlEl.style.display = "inline";
+
+          setPercent(entry, 100);
+        } else {
+          entry.statusEl.textContent = `Error (HTTP ${xhr.status})`;
+          entry.barWrapEl.classList.add("err");
+          entry.rowEl.querySelector(".status").classList.add("err");
+        }
+        resolve();
+      };
+
+      xhr.onerror = () => {
+        if (fakeTimer) clearInterval(fakeTimer);
+        entry.statusEl.textContent = "Error de red";
+        entry.barWrapEl.classList.add("err");
+        entry.rowEl.querySelector(".status").classList.add("err");
+        resolve();
+      };
+
+      xhr.setRequestHeader("Content-Type", entry.file.type || "application/octet-stream");
+      xhr.send(entry.file);
+    });
+  }
+
+  processBtn.addEventListener("click", async () => {
+    processBtn.disabled = true;
+    downloadAllBtn.disabled = true;
+    startTimer();
+
+    // Secuencial a propósito: mismo criterio que el script original
+    // (menos memoria/CPU concurrente, más estable).
+    for (const entry of entries) {
+      if (entry.percent >= 100) continue;
+      await processOne(entry);
+    }
+
+    stopTimer();
+    processBtn.disabled = false;
+    downloadAllBtn.disabled = !entries.some((e) => e.resultBlob);
+  });
+
+  downloadAllBtn.addEventListener("click", async () => {
+    const done = entries.filter((e) => e.resultBlob);
+    if (done.length === 0) return;
+
+    downloadAllBtn.disabled = true;
+    downloadAllBtn.textContent = "Comprimiendo…";
+
+    const zip = new JSZip();
+    for (const entry of done) {
+      const base = (entry.file.webkitRelativePath || entry.file.name).replace(/\.[^.]+$/, "");
+      zip.file(`${base}.png`, entry.resultBlob);
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sin_fondo.zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    downloadAllBtn.disabled = false;
+    downloadAllBtn.textContent = "Descargar todo (.zip de .png)";
+  });
+
+  // ── Isla Update 2.0 ──
+  const islandPill = document.getElementById("island-pill");
+  const islandCard = document.getElementById("island-card");
+  const islandClose = document.getElementById("island-close");
+  islandPill.addEventListener("click", () => {
+    const open = islandCard.hidden;
+    islandCard.hidden = !open;
+    islandPill.setAttribute("aria-expanded", String(open));
+    islandPill.innerHTML = open
+      ? '<span class="dot"></span> Update 2.0 — ocultar'
+      : '<span class="dot"></span> Update 2.0 — ver cambios';
+  });
+  islandClose.addEventListener("click", () => {
+    islandCard.hidden = true;
+    islandPill.setAttribute("aria-expanded", "false");
+    islandPill.innerHTML = '<span class="dot"></span> Update 2.0 — ver cambios';
+  });
+</script>
+</body>
+</html>
