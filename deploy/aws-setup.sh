@@ -6,7 +6,31 @@
 #   2) ssh -i clave.pem ubuntu@TU_IP "sudo bash /opt/quitar-fondo/deploy/aws-setup.sh"
 #   3) Entra a http://TU_IP/  (y http://TU_IP/api/health)
 set -euo pipefail
-APP_DIR=/opt/quitar-fondo
+# APP_DIR: 1er argumento, o /opt/quitar-fondo, o el directorio actual si tiene el proyecto.
+if [ $# -ge 1 ]; then
+  APP_DIR="$1"
+elif [ -f ./server.js ] && [ -f ./package.json ]; then
+  APP_DIR="$(pwd)"
+else
+  APP_DIR=/opt/quitar-fondo
+fi
+
+if [ ! -f "$APP_DIR/server.js" ] || [ ! -f "$APP_DIR/package.json" ]; then
+  echo "ERROR: no encuentro server.js + package.json en $APP_DIR"
+  echo "Uso: sudo bash deploy/aws-setup.sh [RUTA_DEL_PROYECTO]"
+  echo "Ej:  sudo bash deploy/aws-setup.sh ~/Raices-sabor-y-estilo"
+  exit 1
+fi
+echo "==> APP_DIR=$APP_DIR"
+
+# Normalizar: el servicio systemd apunta a /opt/quitar-fondo.
+if [ "$APP_DIR" != "/opt/quitar-fondo" ]; then
+  echo "==> Copiando a /opt/quitar-fondo..."
+  mkdir -p /opt/quitar-fondo
+  cp -r "$APP_DIR/"* /opt/quitar-fondo/
+  chown -R ubuntu:ubuntu /opt/quitar-fondo
+  APP_DIR=/opt/quitar-fondo
+fi
 
 echo "==> Node.js 22..."
 if ! command -v node >/dev/null 2>&1; then
