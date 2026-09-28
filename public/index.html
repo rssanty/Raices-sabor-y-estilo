@@ -273,11 +273,10 @@
     <h2>Update 2.0</h2>
     <p class="update-time">📅 28/09/2026 — 00:44 CLT / 03:44 UTC</p>
     <ul>
-      <li>Pipeline Node.js puro: ONNX Runtime → <strong>U²-Net (320px)</strong> → máscara alpha → Sharp → PNG transparente</li>
-      <li>Modelo liviano (~176 MB) que <strong>se descarga solo</strong> en el servidor: nada pesado en el deploy</li>
+      <li>Pipeline Node.js puro: ONNX Runtime → <strong>RMBG-2.0 (1024px)</strong> → máscara alpha → Sharp → PNG transparente</li>
+      <li>Modelo (~977 MB) que <strong>se descarga solo</strong> la primera vez en el servidor: nada pesado en el deploy</li>
       <li>Foto ORIGINAL intacta + máscara a tamaño original (sin reescalar la salida)</li>
-      <li>Sesión ONNX cacheada y bajo consumo (1 hilo, sin arena), <code>maxDuration: 60</code></li>
-      <li>Todo lo subible junto en la carpeta <code>app/</code></li>
+      <li>Sesión ONNX cacheada y bajo consumo, <code>maxDuration: 60</code></li>
     </ul>
     <button id="island-close" class="secondary">Cerrar</button>
   </div>
@@ -324,7 +323,7 @@
 </div>
 
 <script>
-  const API_URL = "/api/remove-bg";
+  const API_URL = "/api/bg-remove";
 
   const folderInput = document.getElementById("folderInput");
   const filesInput = document.getElementById("filesInput");
@@ -475,10 +474,14 @@
           const blob = xhr.response;
           const url = URL.createObjectURL(blob);
           const ms = xhr.getResponseHeader("X-Process-Time-Ms");
+          const w = xhr.getResponseHeader("X-Width");
+          const h = xhr.getResponseHeader("X-Height");
 
           entry.resultBlob = blob;
           entry.afterSlot.innerHTML = `<img src="${url}">`;
-          entry.statusEl.textContent = ms ? `Listo (${(ms / 1000).toFixed(1)}s)` : "Listo";
+          entry.statusEl.textContent = ms
+            ? `Listo (${(ms / 1000).toFixed(1)}s)`
+            : (w && h ? `Listo (${w}×${h})` : "Listo");
           entry.statusEl.className = "statusText";
           entry.rowEl.querySelector(".status").classList.add("ok");
 
@@ -489,9 +492,30 @@
 
           setPercent(entry, 100);
         } else {
-          entry.statusEl.textContent = `Error (HTTP ${xhr.status})`;
-          entry.barWrapEl.classList.add("err");
-          entry.rowEl.querySelector(".status").classList.add("err");
+          // El error viene como blob (responseType='blob'): leerlo como texto/JSON.
+          const reader = new FileReader();
+          reader.onload = () => {
+            let msg = `Error (HTTP ${xhr.status})`;
+            try {
+              const j = JSON.parse(reader.result);
+              if (j.error) msg = j.error;
+            } catch {
+              if (typeof reader.result === "string" && reader.result.length < 300) msg = reader.result;
+            }
+            entry.statusEl.textContent = msg;
+            entry.barWrapEl.classList.add("err");
+            entry.rowEl.querySelector(".status").classList.add("err");
+          };
+          reader.onerror = () => {
+            entry.statusEl.textContent = `Error (HTTP ${xhr.status})`;
+            entry.barWrapEl.classList.add("err");
+            entry.rowEl.querySelector(".status").classList.add("err");
+          };
+          try { reader.readAsText(xhr.response); } catch {
+            entry.statusEl.textContent = `Error (HTTP ${xhr.status})`;
+            entry.barWrapEl.classList.add("err");
+            entry.rowEl.querySelector(".status").classList.add("err");
+          }
         }
         resolve();
       };
@@ -504,8 +528,9 @@
         resolve();
       };
 
-      xhr.setRequestHeader("Content-Type", entry.file.type || "application/octet-stream");
-      xhr.send(entry.file);
+      const form = new FormData();
+      form.append("image", entry.file, entry.file.name);
+      xhr.send(form);
     });
   }
 

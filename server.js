@@ -276,7 +276,19 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
-app.use(express.static(publicDir, { maxAge: '1h' }));
+// Compat: el frontend antiguo (cacheado) mandaba el archivo crudo con
+// Content-Type: image/... en vez de FormData. Aceptarlo como Buffer.
+app.use(express.raw({ type: ['image/*', 'application/octet-stream'], limit: '25mb' }));
+// HTML sin caché (para que el navegador siempre tome el último index.html);
+// assets estáticos sí cacheados 1h.
+app.use(express.static(publicDir, {
+  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
+}));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -426,13 +438,17 @@ app.get('/api/stats', (_req, res) => {
   }
 });
 
-// Acepta multipart (campo "image") o JSON { dataUrl }.
-app.post('/api/bg-remove', upload.single('image'), async (req, res) => {
+// Acepta multipart (campo "image"), JSON { dataUrl } o bytes crudos
+// (Content-Type: image/... del frontend antiguo cacheado).
+async function handleBgRemove(req, res) {
+  const t0 = Date.now();
   req.setTimeout(60 * 60 * 1000);
   try {
     let input = null;
     if (req.file?.buffer?.length) {
       input = req.file.buffer;
+    } else if (Buffer.isBuffer(req.body) && req.body.length) {
+      input = req.body;
     } else if (req.body?.dataUrl) {
       const { dataUrl } = req.body;
       if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
@@ -451,6 +467,7 @@ app.post('/api/bg-remove', upload.single('image'), async (req, res) => {
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('X-Width', String(width));
     res.setHeader('X-Height', String(height));
+    res.setHeader('X-Process-Time-Ms', String(Date.now() - t0));
     return res.status(200).send(buffer);
   } catch (err) {
     const status = err.status || 500;
@@ -459,6 +476,15 @@ app.post('/api/bg-remove', upload.single('image'), async (req, res) => {
     if (!res.headersSent) return res.status(status).json({ ok: false, error: err.message || 'Error interno' });
     return res.end();
   }
+}
+
+// Ruta actual + alias de la URL antigua (por si el navegador tiene el HTML viejo en caché).
+app.post('/api/bg-remove', upload.single('image'), handleBgRemove);
+app.post('/api/remove-bg', upload.single('image'), handleBgRemove);
+
+// /api/* desconocido → JSON (no HTML) para que el frontend muestre el error real.
+app.use('/api/', (_req, res) => {
+  res.status(404).json({ ok: false, error: 'Ruta API no encontrada.' });
 });
 
 app.get('*', (req, res, next) => {
