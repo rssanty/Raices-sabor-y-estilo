@@ -101,7 +101,17 @@ function getRemover() {
   if (!removerPromise) {
     removerPromise = (async () => {
       const modelPath = await ensureModel();
-      const session = await ort.InferenceSession.create(modelPath, { logLevel: 'error' });
+      // Hilos y arena limitados: RMBG-2.0 (~1 GB) con arena por defecto
+      // llega a picos de 7+ GB y el OOM-killer mata el proceso en EC2.
+      // Sin arena + 2 hilos el pico ronda ~3-4 GB (más rápido que 1 hilo,
+      // estable en máquinas de 8 GB con swap).
+      const session = await ort.InferenceSession.create(modelPath, {
+        logLevel: 'error',
+        intraOpNumThreads: 2,
+        interOpNumThreads: 1,
+        enableCpuMemArena: false,
+        enableMemPattern: false,
+      });
       return new BackgroundRemover(session, MEAN, STD);
     })().catch((err) => {
       removerPromise = null;
