@@ -270,9 +270,11 @@ export function removeBackgroundFromBuffer(inputBuffer) {
   });
 }
 
-// ── Servidor ──
+// ── Servidor (listo para AWS/EC2 Ubuntu: escucha en 0.0.0.0) ──
 const app = express();
+app.set('trust proxy', 1); // detrás de nginx/ELB en AWS
 const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
@@ -500,6 +502,15 @@ app.use((err, _req, res, _next) => {
   return res.status(status).json({ ok: false, error: message });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n  Quitar fondo listo en http://localhost:${PORT}\n`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`\n  Quitar fondo listo en http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}\n`);
 });
+
+// Apagado limpio (systemd/Docker en EC2 mandan SIGTERM).
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    console.log(`[${sig}] cerrando...`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}

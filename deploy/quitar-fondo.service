@@ -1,0 +1,17 @@
+[Unit]
+Description=Quitar fondo (RMBG-2.0)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/quitar-fondo
+Environment=PORT=3000
+Environment=HOST=0.0.0.0
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/quitar-fondo/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
